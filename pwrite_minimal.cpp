@@ -17,6 +17,8 @@
 // the shared block's page out of the cache before A reaches it:
 //   none     nothing (default)
 //   msync    msync(MS_SYNC | MS_INVALIDATE) on a mapping of the shared page
+//   msync_sync  msync(MS_SYNC) on a mapping of the shared page, no invalidate
+//   msync_inval msync(MS_INVALIDATE) on a mapping of the shared page, no sync
 //   fsync    fsync the file
 //   nocache  B writes through a second descriptor with F_NOCACHE instead
 //
@@ -116,9 +118,9 @@ int main(int argc, char **argv)
         }
     }
   std::string b_after = getenv("PWRITE_MINIMAL_B_AFTER") ? getenv("PWRITE_MINIMAL_B_AFTER") : "none";
-  if(b_after != "none" && b_after != "msync" && b_after != "fsync" && b_after != "nocache")
+  if(b_after != "none" && b_after != "msync" && b_after != "msync_sync" && b_after != "msync_inval" && b_after != "fsync" && b_after != "nocache")
     {
-      fprintf(stderr, "PWRITE_MINIMAL_B_AFTER must be none, msync, fsync or nocache\n");
+      fprintf(stderr, "PWRITE_MINIMAL_B_AFTER must be none, msync, msync_sync, msync_inval, fsync or nocache\n");
       return 2;
     }
   int b_fd = fd;
@@ -154,7 +156,7 @@ int main(int argc, char **argv)
         b0 = clock_type::now();
         pwrite_once(b_fd, b_buf, x);
         b1 = clock_type::now();
-        if(b_after == "msync")
+        if(b_after == "msync" || b_after == "msync_sync" || b_after == "msync_inval")
           {
             size_t map_off = x / size_t(page) * size_t(page);
             void *m = mmap(nullptr, size_t(page), PROT_READ, MAP_SHARED, fd, off_t(map_off));
@@ -162,7 +164,9 @@ int main(int argc, char **argv)
               {
                 die("mmap");
               }
-            if(msync(m, size_t(page), MS_SYNC | MS_INVALIDATE) != 0)
+            int flags = b_after == "msync" ? MS_SYNC | MS_INVALIDATE
+              : b_after == "msync_sync" ? MS_SYNC : MS_INVALIDATE;
+            if(msync(m, size_t(page), flags) != 0)
               {
                 die("msync");
               }
